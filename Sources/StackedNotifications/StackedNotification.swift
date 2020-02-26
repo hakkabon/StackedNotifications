@@ -11,7 +11,7 @@ import Dispatch
 import QuartzCore
 
 @available(iOS 9.0, *)
-protocol StackedNotificationDelegate {
+public protocol StackedNotificationDelegate {
     func show(notification view: StackedNotification, hideAfter delay: TimeInterval)
     func willShow(notification view: StackedNotification, in hostView: UIView)
     func didShow(notification view: StackedNotification, in hostView: UIView)
@@ -28,7 +28,10 @@ public protocol NotificationOptions {
 
     // Adjusts the width of a notification view.
     var width: CGFloat { get }
-    
+
+    // Adjusts the max height of a notification view.
+    var height: CGFloat { get }
+
     // Specifies duration of fade-in animation of a notification.
     var fadeInDuration: Double { get }
     
@@ -63,11 +66,8 @@ public extension NotificationOptions {
     // Initial position of notification.
     var position: StackedNotification.Position { return StackedNotification.Position.top }
 
-    // Adjusts the width of a notification view.
-    var width: CGFloat {
-        let width: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 360 : 300
-        return width
-    }
+    var width: CGFloat { return UIDevice.current.userInterfaceIdiom == .pad ? 360 : 300 }
+    var height: CGFloat { return UIDevice.current.userInterfaceIdiom == .pad ? 200 : 190 }
     var fadeInDuration: Double { return  0.25 }
     var fadeOutDuration: Double  { return  0.2 }
     var showAnimationDuration: Double { return  0.25 }
@@ -99,7 +99,7 @@ public class StackedNotification: UIView {
     private static var overlayWindow: UIWindow?
     private static var overlayViewController: OverlayViewController?
 
-    // Host view in which notifications views are displayed as subviews.
+    /// The host view in which notifications views are displayed as subviews.
     public static var hostView: UIView? = {
         overlayViewController = OverlayViewController()
         overlayWindow = UIWindow(frame: UIScreen.main.bounds)
@@ -110,7 +110,7 @@ public class StackedNotification: UIView {
         return overlayViewController?.overlayView
     }()
 
-    // Type of stacked notifications.
+    /// Type of stacked notifications.
     public enum NotifyType : Int {
         case success, failure, info, warning
         
@@ -141,12 +141,13 @@ public class StackedNotification: UIView {
         }
     }
     
-    // Specifies how notification views are dismissed.
+    /// Specifies how notification views are dismissed.
     public enum ExitType : Int {
-        case dequeue, pop
+        case dequeue, pop, slide
     }
 
-    // Position on screen where notifier view is displayed.
+    /// Position on screen where notification view is displayed.
+    /// Note that `topLeft`, `topRight`, `bottomLeft`, `bottomRight` are meant for iPad devices only.
     public enum Position : Int {
         case top, topLeft, topRight
         case bottom, bottomLeft, bottomRight
@@ -159,35 +160,8 @@ public class StackedNotification: UIView {
         }
     }
 
-    // Display options for notifications views.
+    /// Display options for notifications views.
     var options: NotificationOptions!
-
-    // Defines the internal display states.
-    enum State : Int {
-        case showing, hiding, movingForward, movingBackward, visible, hidden
-    }
-    var state: State = State.hidden
-    var isScheduledToHide: Bool = false
-    var shouldForceHide: Bool = false
-    private var type: NotifyType = .info
-    private let forceHideAnimationDuration = 0.1
-    private var delegate: StackedNotificationDelegate?
-
-    struct Default {
-        static var width: CGFloat { return UIDevice.current.userInterfaceIdiom == .pad ? 360 : 300 }
-        static var maxHeight: CGFloat { return UIDevice.current.userInterfaceIdiom == .pad ? 200 : 167 }
-        static var minHeight: CGFloat { return UIDevice.current.userInterfaceIdiom == .pad ? 100 : 80 }
-        static var panelHeight: CGFloat { return UIDevice.current.userInterfaceIdiom == .pad ? 30 : 30 }
-        static var titleFontSize: CGFloat { return UIDevice.current.userInterfaceIdiom == .pad ? 20 : 18 }
-        static var detailFontSize: CGFloat { return UIDevice.current.userInterfaceIdiom == .pad ? 18 : 17 }
-        static var margin: CGFloat { return UIDevice.current.userInterfaceIdiom == .pad ? 10 : 10 }
-        
-        // Specifies names used for animations.
-        static let showAnimation = "ShowAnimation"
-        static let hideAnimation = "HideAnimation"
-        static let moveAnimation = "MoveAnimation"
-        static let propertyKey = "Animation"
-    }
 
     lazy var outerStackView: UIStackView = {
         let view = UIStackView()
@@ -217,7 +191,7 @@ public class StackedNotification: UIView {
         view.clipsToBounds = true
         view.contentMode = .scaleAspectFit
         view.image = getAppIcon()
-        view.layer.cornerRadius = Default.margin
+        view.layer.cornerRadius = Constants.cornerRadius * 0.5
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
@@ -225,7 +199,7 @@ public class StackedNotification: UIView {
     lazy var titleLabel: UILabel = {
         let label = UILabel()
         label.backgroundColor = UIColor.clear
-        label.font = UIFont.boldSystemFont(ofSize: Default.titleFontSize)
+        label.font = UIFont.boldSystemFont(ofSize: Constants.titleFontSize)
         label.isUserInteractionEnabled = false
         label.lineBreakMode = .byTruncatingTail
         label.numberOfLines = 1
@@ -245,19 +219,44 @@ public class StackedNotification: UIView {
         return view
     }()
 
-    lazy var messageLabel: UILabel = {
+    lazy var message: UILabel = {
         let label = UILabel()
         label.backgroundColor = UIColor.clear
-        label.font = UIFont.systemFont(ofSize: Default.detailFontSize)
+        label.font = UIFont.systemFont(ofSize: Constants.detailFontSize)
         label.isUserInteractionEnabled = false
+        label.lineBreakMode = .byTruncatingTail
         label.numberOfLines = 0
-        label.lineBreakMode = .byWordWrapping
         label.textAlignment = .left
         label.textColor = type.textColor
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
     
+    // Defines the internal display states.
+    enum State : Int {
+        case showing, hiding, movingForward, movingBackward, visible, hidden
+    }
+    var state: State = State.hidden
+    var isScheduledToHide: Bool = false
+    var shouldForceHide: Bool = false
+    private var type: NotifyType = .info
+    private let forceHideAnimationDuration = 0.1
+    private var delegate: StackedNotificationDelegate?
+
+    struct Constants {
+        static var cornerRadius: CGFloat = 10
+        static var titleHeight: CGFloat = 30
+        static var minHeight: CGFloat = 100
+        static var titleFontSize: CGFloat { return UIDevice.current.userInterfaceIdiom == .pad ? 20 : 18 }
+        static var detailFontSize: CGFloat { return UIDevice.current.userInterfaceIdiom == .pad ? 18 : 17 }
+        static var margin: CGFloat = 10
+
+        static let showAnimation = "ShowAnimation"
+        static let hideAnimation = "HideAnimation"
+        static let moveAnimation = "MoveAnimation"
+        static let propertyKey = "Animation"
+    }
+
     private override init(frame: CGRect) {
         super.init(frame: frame)
         self.initialization(host: StackedNotification.hostView!)
@@ -269,7 +268,15 @@ public class StackedNotification: UIView {
     }
     
     public convenience init(title: String, message: String, type: NotifyType, options: NotificationOptions) {
-        self.init(frame: CGRect(origin: CGPoint.zero, size: CGSize(width: options.width, height: StackedNotification.adjustedHeight(for: message, constrained: options.width))))
+        self.init(
+            frame: CGRect(
+                origin: .zero,
+                size: CGSize(
+                    width: options.width,
+                    height: StackedNotification.adjustedHeight(for: message, constrained: options.width, maximumHeight: options.height)
+                )
+            )
+        )
 
         guard let view = StackedNotification.hostView else {
             fatalError("Host view cannot be nil.")
@@ -278,7 +285,7 @@ public class StackedNotification: UIView {
         self.options = options
         self.initialization(host: view)
         self.titleLabel.text = title
-        self.messageLabel.text = message
+        self.message.text = message
         self.type = type
         setupInitalFrame(for: self.options.position)
     }
@@ -333,7 +340,7 @@ public class StackedNotification: UIView {
 
         outerStackView.addArrangedSubview(innerStackView)
         outerStackView.addArrangedSubview(separator)
-        outerStackView.addArrangedSubview(messageLabel)
+        outerStackView.addArrangedSubview(message)
         self.addSubview(outerStackView)
 
         // Setup delegate to manager (monitor) object.
@@ -345,17 +352,17 @@ public class StackedNotification: UIView {
             innerStackView.topAnchor.constraint(equalTo: outerStackView.topAnchor),
             innerStackView.leadingAnchor.constraint(equalTo: outerStackView.leadingAnchor),
             innerStackView.trailingAnchor.constraint(equalTo: outerStackView.trailingAnchor),
-            innerStackView.heightAnchor.constraint(equalToConstant: Default.panelHeight),
+            innerStackView.heightAnchor.constraint(equalToConstant: Constants.titleHeight),
         ])
         
         NSLayoutConstraint.activate([
-            outerStackView.topAnchor.constraint(equalTo: self.topAnchor, constant: 10),
-            outerStackView.leadingAnchor.constraint(equalTo: self.leadingAnchor, constant: 10),
-            outerStackView.trailingAnchor.constraint(equalTo: self.trailingAnchor, constant: -10),
-            outerStackView.bottomAnchor.constraint(equalTo: self.bottomAnchor, constant: -10),
+            outerStackView.topAnchor.constraint(equalTo: self.topAnchor, constant: Constants.margin),
+            outerStackView.leadingAnchor.constraint(equalTo: self.leadingAnchor, constant: Constants.margin),
+            outerStackView.trailingAnchor.constraint(equalTo: self.trailingAnchor, constant: -Constants.margin),
+            outerStackView.bottomAnchor.constraint(equalTo: self.bottomAnchor, constant: -Constants.margin),
         ])
 
-        NSLayoutConstraint.activate([
+        NSLayoutConstraint.activate([   // aspect ratio 1:1
             iconView.widthAnchor.constraint(equalTo: iconView.heightAnchor, multiplier: 1)
         ])
 
@@ -368,20 +375,20 @@ public class StackedNotification: UIView {
         iconView.setContentHuggingPriority(UILayoutPriority.defaultHigh, for: .horizontal)
         iconView.setContentHuggingPriority(UILayoutPriority.defaultHigh, for: .vertical)
         
-        messageLabel.setContentHuggingPriority(UILayoutPriority.defaultHigh, for: .horizontal)
-        messageLabel.setContentHuggingPriority(UILayoutPriority.defaultHigh, for: .vertical)
+        message.setContentHuggingPriority(UILayoutPriority.defaultHigh, for: .horizontal)
+        message.setContentHuggingPriority(UILayoutPriority.defaultHigh, for: .vertical)
         
         super.updateConstraints()
     }
 
     override public func draw(_ rect: CGRect) {
         super.draw(rect)
-        
+
+        // Get the current graphics context.
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+
         // Hasn't got its real value yet!
         self.separator.color = darken(color: type.backgroundColor)
-        
-        // Get the current graphics context.
-        let context = UIGraphicsGetCurrentContext()!
         
         // Save the previous graphics state and make the specified context the current context.
         UIGraphicsPushContext(context)
@@ -389,7 +396,7 @@ public class StackedNotification: UIView {
         // Make the painting area just a tiny bit smaller.
         // let rect = CGRect(origin: CGPoint.zero, size: rect.size)
         let rect = CGRect(origin: CGPoint.zero, size: rect.size)
-        let roundedRectanglePath = UIBezierPath(roundedRect: rect, cornerRadius: Default.margin)
+        let roundedRectanglePath = UIBezierPath(roundedRect: rect, cornerRadius: Constants.cornerRadius)
         roundedRectanglePath.addClip()
         let colorsArray = [type.backgroundColor.cgColor, darken(color: type.backgroundColor).cgColor]
         let colorSpace = CGColorSpaceCreateDeviceRGB()
@@ -414,7 +421,7 @@ public class StackedNotification: UIView {
         self.state = .showing
 
         self.alpha = self.options.viewOpacity
-        delayExecution(deadline: self.options.fadeInDuration) {
+        delayExecution(seconds: self.options.fadeInDuration) {
             let oldPoint = CGPoint(x: self.layer.position.x, y: self.layer.position.y)
             let x = oldPoint.x
             var y = oldPoint.y
@@ -437,24 +444,41 @@ public class StackedNotification: UIView {
             moveLayer.duration = self.options.showAnimationDuration
             moveLayer.timingFunction = CAMediaTimingFunction(name: CAMediaTimingFunctionName.easeOut)
             moveLayer.delegate = self
-            moveLayer.setValue(Default.showAnimation, forKey:Default.propertyKey)
-            self.layer.add(moveLayer, forKey: Default.showAnimation)
+            moveLayer.setValue(Constants.showAnimation, forKey: Constants.propertyKey)
+            self.layer.add(moveLayer, forKey: Constants.showAnimation)
         }
     }
     
+    /// Move the center of the notification to a new position in global coordinates.
     func hideView() {
         self.delegate?.willHide(notification: self, in: self.superview!)
         
         self.state = .hiding
         let oldPoint = self.layer.position
-        let x: CGFloat = oldPoint.x
-        var y: CGFloat = oldPoint.y
-        switch self.options.position {
-        case .top, .topLeft, .topRight:
-            y = self.options.exitType == .dequeue ? self.superview!.bounds.size.height - self.bounds.height/2 : self.bounds.height/2
-        case .bottom, .bottomLeft, .bottomRight:
-            y = self.options.exitType == .dequeue ? self.bounds.height/2 : self.superview!.bounds.size.height - self.bounds.height/2
-        }
+        let (x,y): (CGFloat,CGFloat) = {
+            switch self.options.position {
+            case .top, .topLeft, .topRight:
+                return {
+                    switch self.options.exitType {
+                    case .dequeue: return (oldPoint.x, self.superview!.bounds.size.height - self.bounds.height/2)
+                    case .pop: return (oldPoint.x, self.bounds.height/2)
+                    case .slide: return self.options.position == .topLeft ?
+                        (-self.bounds.width, oldPoint.y) :
+                        (self.superview!.bounds.width + self.bounds.width/2, oldPoint.y)
+                    }
+                    }()
+            case .bottom, .bottomLeft, .bottomRight:
+                return {
+                    switch self.options.exitType {
+                    case .dequeue: return (oldPoint.x, self.bounds.height/2)
+                    case .pop: return (oldPoint.x, self.superview!.bounds.size.height - self.bounds.height/2)
+                    case .slide: return self.options.position == .bottomLeft ?
+                        (-self.bounds.width, oldPoint.y) :
+                        (self.superview!.bounds.width + self.bounds.width/2, oldPoint.y)
+                    }
+                    }()
+            }
+        }()
         
         // Change center of layer.
         let newPoint = CGPoint(x: x, y: y)
@@ -467,8 +491,8 @@ public class StackedNotification: UIView {
         moveLayer.duration = self.shouldForceHide ? self.forceHideAnimationDuration : self.options.hideAnimationDuration
         moveLayer.timingFunction = CAMediaTimingFunction(name: CAMediaTimingFunctionName.easeIn)
         moveLayer.delegate = self
-        moveLayer.setValue(Default.hideAnimation, forKey: Default.propertyKey)
-        self.layer.add(moveLayer, forKey: Default.hideAnimation)
+        moveLayer.setValue(Constants.hideAnimation, forKey: Constants.propertyKey)
+        self.layer.add(moveLayer, forKey: Constants.hideAnimation)
     }
     
     func pushView(_ distance: CGFloat, forward: Bool, delay: Double) {
@@ -480,20 +504,20 @@ public class StackedNotification: UIView {
         let newPoint = CGPoint(x: oldPoint.x, y: self.layer.position.y + distanceToPush)
 
         // Animate change.
-        delayExecution(deadline: delay) {
+        delayExecution(seconds: delay) {
             self.layer.position = newPoint // Assignment has to be delayed as well.
             let moveLayer = CABasicAnimation(keyPath: "position")
             moveLayer.fromValue = NSValue(cgPoint: oldPoint)
             moveLayer.toValue = NSValue(cgPoint: newPoint)
             moveLayer.duration = forward ? self.options.showAnimationDuration : self.options.hideAnimationDuration
             moveLayer.timingFunction = forward ? CAMediaTimingFunction(name: CAMediaTimingFunctionName.easeOut) : CAMediaTimingFunction(name: CAMediaTimingFunctionName.easeIn)
-            moveLayer.setValue(Default.moveAnimation, forKey: Default.propertyKey)
+            moveLayer.setValue(Constants.moveAnimation, forKey: Constants.propertyKey)
             moveLayer.delegate = self
-            self.layer.add(moveLayer, forKey: Default.moveAnimation)
+            self.layer.add(moveLayer, forKey: Constants.moveAnimation)
         }
     }
 
-    // Adjust top left (x,y) coordinates according to position.
+    /// Adjust top left (x,y) coordinates according to position.
     private func setupInitalFrame(for position: Position) {
         var frame = self.frame
         var p: CGPoint = CGPoint.zero
@@ -503,19 +527,19 @@ public class StackedNotification: UIView {
             p.x = self.superview!.bounds.size.width / 2 - frame.size.width / 2
             p.y -= frame.size.height
         case .topLeft:
-            p.x = frame.size.width
+            p.x = Constants.margin
             p.y -= frame.size.height
         case .topRight:
-            p.x = self.superview!.bounds.size.width - frame.size.width
+            p.x = self.superview!.bounds.size.width - frame.size.width - Constants.margin
             p.y -= frame.size.height
         case .bottom:
             p.x = self.superview!.bounds.size.width / 2 - frame.size.width / 2
             p.y = self.superview!.bounds.size.height
         case .bottomLeft:
-            p.x = 0
+            p.x = Constants.margin
             p.y = self.superview!.bounds.size.height
         case .bottomRight:
-            p.x = self.superview!.bounds.size.width - frame.size.width
+            p.x = self.superview!.bounds.size.width - frame.size.width - Constants.margin
             p.y = self.superview!.bounds.size.height
         }
         frame.origin = p
@@ -536,15 +560,20 @@ public class StackedNotification: UIView {
 @available(iOS 9.0, *)
 extension StackedNotification : CAAnimationDelegate {
     
-    // Swift 3 issue: finished flag always false here
+    /// CA animation stopped at this point.
+    /// - Parameters:
+    ///   - animation: reference to the animation
+    ///   - flag: flag indicating completion of animation (which is always false)
     public func animationDidStop(_ animation: CAAnimation, finished flag: Bool) {
+        let animationKind = animation.value(forKey: Constants.propertyKey) as! String
+
         // Show animation ended.
-        if ((animation.value(forKey: Default.propertyKey) as! String) == Default.showAnimation) {
+        if animationKind == Constants.showAnimation {
             self.delegate?.didShow(notification: self, in: self.superview!)
             self.state = .visible
         }
         // Hide animation ended.
-        else if ((animation.value(forKey: Default.propertyKey) as! String) == Default.hideAnimation) {
+        else if animationKind == Constants.hideAnimation {
             UIView.animate(withDuration: self.shouldForceHide ? self.forceHideAnimationDuration : self.options.fadeOutDuration, delay: 0.0, options: .curveLinear, animations: {() -> Void in
                 self.alpha = 0.0
             }, completion: {(_ finished: Bool) -> Void in
@@ -555,7 +584,7 @@ extension StackedNotification : CAAnimationDelegate {
             })
         }
         // Move animation ended.
-        else if ((animation.value(forKey: Default.propertyKey) as! String) == Default.moveAnimation) {
+        else if animationKind == Constants.moveAnimation {
             self.state = .visible
         }
     }
@@ -564,7 +593,7 @@ extension StackedNotification : CAAnimationDelegate {
 @available(iOS 9.0, *)
 extension StackedNotification {
 
-    // Seems to be AppIcon60x60 which is returned.
+    /// Returns the app icon contained in the app bundle. Seems to be AppIcon60x60 which is returned.
     func getAppIcon() -> UIImage? {
         guard let iconsDictionary = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String:Any],
             let primaryIconsDictionary = iconsDictionary["CFBundlePrimaryIcon"] as? [String:Any],
@@ -573,71 +602,76 @@ extension StackedNotification {
         return UIImage(named: lastIcon)
     }
     
-    static func adjustedHeight(for text: String, constrained width: CGFloat) -> CGFloat {
-        let rect = boundingRect(of: text, constrained: width, font: UIFont.boldSystemFont(ofSize: Default.detailFontSize))
-        var height = Default.panelHeight + 1 + rect.height
+    /// Adjust height of notification size depending on the amount of text, constraining width and max height.
+    /// - Parameters:
+    ///   - text: text for which the adjusted height is calculated
+    ///   - width: maximum width
+    /// - Note: Doesn't work well for iphones. The constant `4 * Constants.margin` is just made large enough
+    ///         to work for iphones. On ipads, on the other hand, the bounding rectangle is too large, but
+    ///         still not too bad.
+    static func adjustedHeight(for text: String, constrained width: CGFloat, maximumHeight maxHeight: CGFloat) -> CGFloat {
+        let rect = boundingRect(of: text, constraining: width - 2 * Constants.margin, font: UIFont.systemFont(ofSize: Constants.detailFontSize))
+        var height = Constants.titleHeight + 1 + 4 * Constants.margin + rect.height
+
         // Clamp height value to [min ... max].
-        height = height < Default.minHeight ? Default.minHeight : height
-        return height < Default.maxHeight ? height : Default.maxHeight
+        height = height < Constants.minHeight ? Constants.minHeight : height
+        height = height > maxHeight ? maxHeight : height
+        
+        print("> limits (\(width),\(width)) size \(rect) of notification with final height: \(ceil(height))")
+        
+        return ceil(height)
     }
 
-    // Returns a bounding rectangle of given text and font contrained by the given width.
-    static func boundingRect(of text: String, constrained width: CGFloat, font: UIFont) -> CGRect {
-        let constraintRect = CGSize(width: width, height: .greatestFiniteMagnitude)
+    /// Returns a bounding rectangle of given text and font constrained by the given width.
+    /// - Parameters:
+    ///   - text: text for which the bounding rect is calculated
+    ///   - width: constraining width limit for bounding rect calculation
+    ///   - font: font used for bounding rect calculation
+    /// - Note: To render the string in multiple lines, specify `usesLineFragmentOrigin` in options.
+    static func boundingRect(of text: String, constraining width: CGFloat, font: UIFont) -> CGRect {
+        let limits = CGSize(width: width, height: .greatestFiniteMagnitude)
+        let options: NSStringDrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
         let rect = text.count == 0 ?
-            "Abc".boundingRect(with: constraintRect, options: .usesLineFragmentOrigin, attributes: [NSAttributedString.Key.font: font], context: nil) :
-            text.boundingRect(with: constraintRect, options: .usesLineFragmentOrigin, attributes: [NSAttributedString.Key.font: font], context: nil)
+            CGRect(origin: .zero, size: CGSize(width: width, height: 0)) :
+            text.boundingRect(with: limits, options: options, attributes: [NSAttributedString.Key.font: font], context: nil)
         return rect
     }
 
-    /// Note that it executes on the main thread.
+    /// Delay execution with the given amount in seconds.
     /// - Parameters:
     ///   - delay: Intended delay in seconds.
     ///   - closure: Block of code to be executed after the delay has expired.
-    func delayExecution(deadline delay: Double, closure: @escaping ()->()) {
+    /// - Note: It dispatches execution on the main thread.
+    func delayExecution(seconds delay: Double, closure: @escaping ()->()) {
         let when = DispatchTime.now() + delay
         DispatchQueue.main.asyncAfter(deadline: when, execute: closure)
     }
     
-    /// Returns an initialized UIColor object corresponding to the given hex string.
+    /// Make the given color lighter.
     /// - Parameters:
-    ///   - hex: String which specifies a color given in hexadecimal string format, example: "#d3d3d3".
-    /// - Returns: The initialized UIColor object.
-    func color(hex: String) -> UIColor {
-        var cString: String = hex.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        
-        if cString.hasPrefix("#") {
-            cString.remove(at: cString.startIndex)
-        }
-        
-        if cString.count != 6 {
-            return UIColor.gray
-        }
-        
-        var rgbValue:UInt32 = 0
-        Scanner(string: cString).scanHexInt32(&rgbValue)
-        
-        return UIColor(
-            red: CGFloat((rgbValue & 0xFF0000) >> 16) / 255.0,
-            green: CGFloat((rgbValue & 0x00FF00) >> 8) / 255.0,
-            blue: CGFloat(rgbValue & 0x0000FF) / 255.0,
-            alpha: CGFloat(1.0)
-        )
-    }
-    
+    ///   - color: amount of change relative this color
+    ///   - amount: amount of change to be applied, range of value: (0 < x < 1)
     func lighten(color: UIColor, amount: CGFloat = 0.25) ->  UIColor {
         return hue(color: color, with: 1 + amount)
     }
     
+    /// Make the given color darker.
+    /// - Parameters:
+    ///   - color: amount of change relative this color
+    ///   - amount: amount of change to be applied, range of value: (0 < x < 1)
     func darken(color: UIColor, amount: CGFloat = 0.25) ->  UIColor {
         return hue(color: color, with: 1 - amount)
     }
     
+    /// Color transform given color with given amount of brightness (in per cent).
+    /// - Parameters:
+    ///   - color: amount of change relative this color
+    ///   - amount: amount of change to be applied, range of value: (0 < x < 1)
     private func hue(color: UIColor, with amount: CGFloat) ->  UIColor {
-        var hue         : CGFloat = 0
-        var saturation  : CGFloat = 0
-        var brightness  : CGFloat = 0
-        var alpha       : CGFloat = 0
+        var hue: CGFloat = 0
+        var saturation: CGFloat = 0
+        var brightness: CGFloat = 0
+        var alpha: CGFloat = 0
         
         if color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha) {
             return UIColor(hue: hue, saturation: saturation, brightness: brightness * amount, alpha: alpha)
