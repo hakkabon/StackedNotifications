@@ -270,7 +270,7 @@ public class StackedNotification: UIView {
     public convenience init(title: String, message: String, type: NotifyType, options: NotificationOptions) {
         self.init(
             frame: CGRect(
-                origin: .zero,
+                origin: CGPoint(x:-400,y:-400), // offscreen
                 size: CGSize(
                     width: options.width,
                     height: StackedNotification.adjustedHeight(for: message, constrained: options.width, maximumHeight: options.height)
@@ -519,31 +519,18 @@ public class StackedNotification: UIView {
 
     /// Adjust top left (x,y) coordinates according to position.
     private func setupInitalFrame(for position: Position) {
-        var frame = self.frame
-        var p: CGPoint = CGPoint.zero
-        
-        switch self.options.position {
-        case .top:
-            p.x = self.superview!.bounds.size.width / 2 - frame.size.width / 2
-            p.y -= frame.size.height
-        case .topLeft:
-            p.x = Constants.margin
-            p.y -= frame.size.height
-        case .topRight:
-            p.x = self.superview!.bounds.size.width - frame.size.width - Constants.margin
-            p.y -= frame.size.height
-        case .bottom:
-            p.x = self.superview!.bounds.size.width / 2 - frame.size.width / 2
-            p.y = self.superview!.bounds.size.height
-        case .bottomLeft:
-            p.x = Constants.margin
-            p.y = self.superview!.bounds.size.height
-        case .bottomRight:
-            p.x = self.superview!.bounds.size.width - frame.size.width - Constants.margin
-            p.y = self.superview!.bounds.size.height
-        }
-        frame.origin = p
-        self.frame = frame
+        let screen: CGSize = CGSize(width: self.superview!.bounds.width, height: self.superview!.bounds.size.height)
+        let (x,y): (CGFloat,CGFloat) = {
+            switch self.options.position {
+            case .top: return((screen.width - self.frame.width) * 0.5, -self.frame.size.height)
+            case .topLeft: return(Constants.margin, -self.frame.size.height)
+            case .topRight: return (screen.width - self.frame.width - Constants.margin, -self.frame.size.height)
+            case .bottom: return ((screen.width - self.frame.width) * 0.5, screen.height)
+            case .bottomLeft: return (Constants.margin, screen.height)
+            case .bottomRight: return (screen.width - frame.size.width - Constants.margin, screen.height)
+            }
+        }()
+        self.frame = CGRect(origin: CGPoint(x:x,y:y), size: frame.size)
     }
     
     private func gradientSetup() -> CGGradient? {
