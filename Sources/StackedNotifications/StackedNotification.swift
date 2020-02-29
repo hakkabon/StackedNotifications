@@ -617,8 +617,6 @@ extension StackedNotification {
         height = height < Constants.minHeight ? Constants.minHeight : height
         height = height > maxHeight ? maxHeight : height
         
-        print("> limits (\(width),\(width)) size \(rect) of notification with final height: \(ceil(height))")
-        
         return ceil(height)
     }
 
