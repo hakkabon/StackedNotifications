@@ -47,15 +47,15 @@ class StackedNotificationMonitor : NSObject {
     }
     
     public func notifications(in view: UIView) -> [StackedNotification] {
-        return view.subviews.filter{ $0 is StackedNotification } as! [StackedNotification]
+        return view.subviews.map{ $0 as! StackedNotification }
     }
     
     public func notification(with tag: Int, in view: UIView) -> [StackedNotification] {
-        return view.subviews.filter{ $0 is StackedNotification && $0.tag == tag } as! [StackedNotification]
+        return view.subviews.filter { $0.tag == tag }.map { $0 as! StackedNotification }
     }
     
     public func hideNotifications(in view: UIView) {
-        let views = view.subviews.filter{ $0 is StackedNotification } as! [StackedNotification]
+        let views = view.subviews.map{ $0 as! StackedNotification }
         for view in views {
             self.hide(notification: view, forced: false)
         }
@@ -81,8 +81,11 @@ extension StackedNotificationMonitor : StackedNotificationDelegate {
     func show(notification view: StackedNotification, hideAfter delay: TimeInterval) {
         if view.tag > 0 {
             // Check for identically tagged notifications being displayed.
-            if notification(with: view.tag, in: view.superview!).count > 0 {
-                // Only allow for one instance to be displayed at a time.
+            let count = notification(with: view.tag, in: view.superview!).count
+            // Only allow for one instance to be displayed at a time.
+            guard count <= 1 else {
+                // Remove instances that are not to be displayed.
+                view.removeFromSuperview()
                 return
             }
         }
@@ -133,8 +136,8 @@ extension StackedNotificationMonitor : StackedNotificationDelegate {
     }
     
     func hide(notification view: StackedNotification, forced: Bool) {
-        // Stop the recursive call chain here.
-        if view.isScheduledToHide { return }
+        guard !view.isScheduledToHide else { return }
+        
         if forced {
             view.shouldForceHide = true
             view.hide()
@@ -158,7 +161,7 @@ extension StackedNotificationMonitor : StackedNotificationDelegate {
     }
     
     func willHide(notification view: StackedNotification, in hostView: UIView) {
-        let stackedViews = hostView.subviews.filter{ $0 is StackedNotification } as! [StackedNotification]
+        let stackedViews = hostView.subviews.map{ $0 as! StackedNotification }
         let viewsInSamePosition = stackedViews.filter{ $0.options.position == view.options.position }
         if let index = viewsInSamePosition.firstIndex(of: view) {
             for i in 0 ..< index {

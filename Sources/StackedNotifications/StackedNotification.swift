@@ -109,37 +109,6 @@ public class StackedNotification: UIView {
         overlayWindow?.isUserInteractionEnabled = true
         return overlayViewController?.overlayView
     }()
-
-    /// Type of stacked notifications.
-    public enum NotifyType : Int {
-        case success, failure, info, warning
-        
-        var backgroundColor: UIColor {
-            switch self {
-            case .success:
-                return UIColor(red: 77/255.0, green: 175/255.0, blue: 67/255.0, alpha: 1.0)
-            case .failure:
-                return UIColor(red: 173/255.0, green: 48/255.0, blue: 48/255.0, alpha: 1.0)
-            case .info:
-                return UIColor(red: 48/255.0, green: 110/255.0, blue: 173/255.0, alpha: 1.0)
-            case .warning:
-                return UIColor(red: 215/255.0, green: 209/255.0, blue: 100/255.0, alpha: 1.0)
-            }
-        }
-
-        var textColor: UIColor {
-            switch self {
-            case .success:
-                return UIColor(white: CGFloat(1.0), alpha: CGFloat(0.9))
-            case .failure:
-                return UIColor(white: CGFloat(1.0), alpha: CGFloat(0.9))
-            case .info:
-                return UIColor(white: CGFloat(1.0), alpha: CGFloat(0.9))
-            case .warning:
-                return UIColor(red: 135/255, green: 84/255, blue: 26/255, alpha: 1)
-            }
-        }
-    }
     
     /// Specifies how notification views are dismissed.
     public enum ExitType : Int {
@@ -187,24 +156,20 @@ public class StackedNotification: UIView {
     
     lazy var iconView: UIImageView = {
         let view = UIImageView()
-        view.backgroundColor = UIColor.clear
         view.clipsToBounds = true
         view.contentMode = .scaleAspectFit
         view.image = getAppIcon()
-        view.layer.cornerRadius = Constants.cornerRadius * 0.5
         view.translatesAutoresizingMaskIntoConstraints = false
+        view.layer.cornerRadius = Constants.cornerRadius * 0.5
         return view
     }()
 
     lazy var titleLabel: UILabel = {
         let label = UILabel()
-        label.backgroundColor = UIColor.clear
         label.font = UIFont.boldSystemFont(ofSize: Constants.titleFontSize)
-        label.isUserInteractionEnabled = false
         label.lineBreakMode = .byTruncatingTail
         label.numberOfLines = 1
         label.textAlignment = .left
-        label.textColor = type.textColor
         label.sizeToFit()
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
@@ -213,25 +178,38 @@ public class StackedNotification: UIView {
     lazy var separator: SeparatorLine = {
         let view = SeparatorLine()
         view.thickness = 1
-        view.color = darken(color: type.backgroundColor)
-        view.isUserInteractionEnabled = false
+        view.color = .lightGray
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
 
     lazy var message: UILabel = {
         let label = UILabel()
-        label.backgroundColor = UIColor.clear
         label.font = UIFont.systemFont(ofSize: Constants.detailFontSize)
-        label.isUserInteractionEnabled = false
         label.lineBreakMode = .byTruncatingTail
         label.numberOfLines = 0
         label.textAlignment = .left
-        label.textColor = type.textColor
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
     
+    let blurEffect = UIBlurEffect(style: blurEffectStyle())
+    
+    lazy var blurredView: UIVisualEffectView = {
+        let effect = UIVisualEffectView(effect: blurEffect)
+        effect.isUserInteractionEnabled = false
+        effect.translatesAutoresizingMaskIntoConstraints = false
+        return effect
+    }()
+
+    class func blurEffectStyle() -> UIBlurEffect.Style {
+        if #available(iOS 13, *) {
+            return .systemUltraThinMaterial
+        } else {
+            return .dark
+        }
+    }
+
     // Defines the internal display states.
     enum State : Int {
         case showing, hiding, movingForward, movingBackward, visible, hidden
@@ -239,7 +217,6 @@ public class StackedNotification: UIView {
     var state: State = State.hidden
     var isScheduledToHide: Bool = false
     var shouldForceHide: Bool = false
-    private var type: NotifyType = .info
     private let forceHideAnimationDuration = 0.1
     private var delegate: StackedNotificationDelegate?
 
@@ -259,18 +236,20 @@ public class StackedNotification: UIView {
 
     private override init(frame: CGRect) {
         super.init(frame: frame)
-        self.initialization(host: StackedNotification.hostView!)
+        self.initializeUsingHostView(host: StackedNotification.hostView!)
     }
     
     required init?(coder aDecoder: NSCoder) {
         super.init(coder: aDecoder)
-        self.initialization(host: StackedNotification.hostView!)
+        self.initializeUsingHostView(host: StackedNotification.hostView!)
     }
     
-    public convenience init(title: String, message: String, type: NotifyType, options: NotificationOptions) {
+    public convenience init(title: String, message: String, options: NotificationOptions) {
         self.init(
             frame: CGRect(
-                origin: CGPoint(x:-400,y:-400), // offscreen
+                // temporary offscreen origin
+                origin: CGPoint(x: options.position.isTop ? -400 : 0,
+                                y: options.position.isTop ? -400 : UIScreen.main.bounds.height),
                 size: CGSize(
                     width: options.width,
                     height: StackedNotification.adjustedHeight(for: message, constrained: options.width, maximumHeight: options.height)
@@ -283,11 +262,10 @@ public class StackedNotification: UIView {
         }
 
         self.options = options
-        self.initialization(host: view)
         self.titleLabel.text = title
         self.message.text = message
-        self.type = type
-        setupInitalFrame(for: self.options.position)
+        self.initializeUsingHostView(host: view)
+        setupInitialFrame(for: self.options.position)
     }
     
     // Returns an array of notifications within a certain view.
@@ -324,42 +302,41 @@ public class StackedNotification: UIView {
         self.delegate?.hide(notification: self, forced: false)
     }
     
-    func initialization(host view: UIView) {
-        // Setup view.
-        self.isUserInteractionEnabled = true
+    func initializeUsingHostView(host view: UIView) {
         self.translatesAutoresizingMaskIntoConstraints = true
         self.autoresizingMask = [.flexibleWidth,.flexibleHeight]
-        self.backgroundColor = UIColor.clear
-        self.state = .hidden
+        self.isUserInteractionEnabled = true
+        self.isHidden = false
         
-        // Add subviews.
-        view.addSubview(self)
-
+        self.addSubview(outerStackView)
         innerStackView.addArrangedSubview(iconView)
         innerStackView.addArrangedSubview(titleLabel)
-
         outerStackView.addArrangedSubview(innerStackView)
         outerStackView.addArrangedSubview(separator)
         outerStackView.addArrangedSubview(message)
-        self.addSubview(outerStackView)
+        
+        self.insertSubview(blurredView, at: 0)
+
+        // Add self as a subview in the hosting view.
+        view.addSubview(self)
 
         // Setup delegate to manager (monitor) object.
         self.delegate = StackedNotificationMonitor.sharedManager
+        self.state = .hidden
     }
 
     override public func updateConstraints() {
-        NSLayoutConstraint.activate([
-            innerStackView.topAnchor.constraint(equalTo: outerStackView.topAnchor),
-            innerStackView.leadingAnchor.constraint(equalTo: outerStackView.leadingAnchor),
-            innerStackView.trailingAnchor.constraint(equalTo: outerStackView.trailingAnchor),
-            innerStackView.heightAnchor.constraint(equalToConstant: Constants.titleHeight),
-        ])
-        
         NSLayoutConstraint.activate([
             outerStackView.topAnchor.constraint(equalTo: self.topAnchor, constant: Constants.margin),
             outerStackView.leadingAnchor.constraint(equalTo: self.leadingAnchor, constant: Constants.margin),
             outerStackView.trailingAnchor.constraint(equalTo: self.trailingAnchor, constant: -Constants.margin),
             outerStackView.bottomAnchor.constraint(equalTo: self.bottomAnchor, constant: -Constants.margin),
+        ])
+        NSLayoutConstraint.activate([
+            innerStackView.topAnchor.constraint(equalTo: outerStackView.topAnchor),
+            innerStackView.leadingAnchor.constraint(equalTo: outerStackView.leadingAnchor),
+            innerStackView.trailingAnchor.constraint(equalTo: outerStackView.trailingAnchor),
+            innerStackView.heightAnchor.constraint(equalToConstant: Constants.titleHeight),
         ])
 
         NSLayoutConstraint.activate([   // aspect ratio 1:1
@@ -372,6 +349,13 @@ public class StackedNotification: UIView {
             separator.heightAnchor.constraint(equalToConstant: 1)
         ])
 
+        NSLayoutConstraint.activate([
+            blurredView.heightAnchor.constraint(equalTo: self.heightAnchor),
+            blurredView.widthAnchor.constraint(equalTo: self.widthAnchor),
+            blurredView.centerXAnchor.constraint(equalTo: self.centerXAnchor),
+            blurredView.centerYAnchor.constraint(equalTo: self.centerYAnchor)
+        ])
+
         iconView.setContentHuggingPriority(UILayoutPriority.defaultHigh, for: .horizontal)
         iconView.setContentHuggingPriority(UILayoutPriority.defaultHigh, for: .vertical)
         
@@ -380,32 +364,19 @@ public class StackedNotification: UIView {
         
         super.updateConstraints()
     }
-
+    
     override public func draw(_ rect: CGRect) {
         super.draw(rect)
 
-        // Get the current graphics context.
-        guard let context = UIGraphicsGetCurrentContext() else { return }
-
-        // Hasn't got its real value yet!
-        self.separator.color = darken(color: type.backgroundColor)
-        
-        // Save the previous graphics state and make the specified context the current context.
-        UIGraphicsPushContext(context)
-        
-        // Make the painting area just a tiny bit smaller.
-        // let rect = CGRect(origin: CGPoint.zero, size: rect.size)
-        let rect = CGRect(origin: CGPoint.zero, size: rect.size)
+        // Create rectangle with rounded corners to mask background.
+        let rect = CGRect(origin: .zero, size: rect.size)
         let roundedRectanglePath = UIBezierPath(roundedRect: rect, cornerRadius: Constants.cornerRadius)
-        roundedRectanglePath.addClip()
-        let colorsArray = [type.backgroundColor.cgColor, darken(color: type.backgroundColor).cgColor]
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let gradient = CGGradient(colorsSpace: colorSpace, colors: colorsArray as CFArray, locations: [0.0, 1.0])
-        context.drawLinearGradient(gradient!, start: CGPoint.zero, end: CGPoint(x: 0.0, y: self.bounds.size.height),
-                                   options: .drawsBeforeStartLocation)
-        
-        // Balance call to UIGraphicsPushContext, restore to previous state.
-        UIGraphicsPopContext()
+
+        let maskLayer = CAShapeLayer()
+        maskLayer.frame = self.bounds
+        maskLayer.path = roundedRectanglePath.cgPath
+        self.layer.mask = maskLayer
+        blurredView.layer.mask = maskLayer
     }
 
     override public func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -429,8 +400,14 @@ public class StackedNotification: UIView {
             switch self.options.position {
             case .top, .topLeft, .topRight:
                 y += self.bounds.size.height
+                if #available(iOS 11.0, *) {
+                    y += self.safeAreaInsets.top
+                }
             case .bottom, .bottomLeft, .bottomRight:
                 y -= self.bounds.size.height
+                if #available(iOS 11.0, *) {
+                    y -= self.safeAreaInsets.bottom
+                }
             }
             
             // Change center of layer.
@@ -518,7 +495,7 @@ public class StackedNotification: UIView {
     }
 
     /// Adjust top left (x,y) coordinates according to position.
-    private func setupInitalFrame(for position: Position) {
+    private func setupInitialFrame(for position: Position) {
         let screen: CGSize = CGSize(width: self.superview!.bounds.width, height: self.superview!.bounds.size.height)
         let (x,y): (CGFloat,CGFloat) = {
             switch self.options.position {
@@ -531,16 +508,6 @@ public class StackedNotification: UIView {
             }
         }()
         self.frame = CGRect(origin: CGPoint(x:x,y:y), size: frame.size)
-    }
-    
-    private func gradientSetup() -> CGGradient? {
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let border = type.backgroundColor.withAlphaComponent(0.6)
-        let topColor = lighten(color: border, amount: 0.37)
-        let midColor = lighten(color: border, amount: 0.1)
-        let bottomColor = lighten(color: border, amount: 0.12)
-        let newGradientColors = [topColor.cgColor, midColor.cgColor, border.cgColor, border.cgColor, bottomColor.cgColor] as CFArray
-        return CGGradient(colorsSpace: colorSpace, colors: newGradientColors, locations: [0, 0.500, 0.501, 0.66, 1])
     }
 }
 
