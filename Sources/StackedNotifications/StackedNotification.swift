@@ -94,7 +94,7 @@ public extension NotificationOptions {
 @available(iOS 9.0, *)
 public class StackedNotification: UIView {
 
-    public static var applicationWindow: UIWindow?
+    static var applicationWindow: UIWindow?
 
     private static var overlayWindow: UIWindow?
     private static var overlayViewController: OverlayViewController?
@@ -102,7 +102,13 @@ public class StackedNotification: UIView {
     /// The host view in which notifications views are displayed as subviews.
     public static var hostView: UIView? = {
         overlayViewController = OverlayViewController()
-        overlayWindow = UIWindow(frame: UIScreen.main.bounds)
+        guard let keyWindow = currentWindow else { fatalError("cannot retrive current window") }
+        if #available(iOS 13.0, *) {
+            overlayWindow = UIWindow(windowScene: keyWindow.windowScene!)
+        } else {
+            overlayWindow = UIWindow(frame: UIScreen.main.bounds)
+        }
+        applicationWindow = keyWindow
         overlayWindow?.windowLevel = UIWindow.Level.alert
         overlayWindow?.rootViewController = overlayViewController
         overlayWindow?.isHidden = false
@@ -170,6 +176,7 @@ public class StackedNotification: UIView {
         label.lineBreakMode = .byTruncatingTail
         label.numberOfLines = 1
         label.textAlignment = .left
+        label.textColor = UIColor.labelText
         label.sizeToFit()
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
@@ -189,6 +196,7 @@ public class StackedNotification: UIView {
         label.lineBreakMode = .byTruncatingTail
         label.numberOfLines = 0
         label.textAlignment = .left
+        label.textColor = UIColor.labelText
         label.translatesAutoresizingMaskIntoConstraints = false
         return label
     }()
@@ -432,33 +440,42 @@ public class StackedNotification: UIView {
         
         self.state = .hiding
         let oldPoint = self.layer.position
-        let (x,y): (CGFloat,CGFloat) = {
-            switch self.options.position {
-            case .top, .topLeft, .topRight:
-                return {
-                    switch self.options.exitType {
-                    case .dequeue: return (oldPoint.x, self.superview!.bounds.size.height - self.bounds.height/2)
-                    case .pop: return (oldPoint.x, self.bounds.height/2)
-                    case .slide: return self.options.position == .topLeft ?
-                        (-self.bounds.width, oldPoint.y) :
-                        (self.superview!.bounds.width + self.bounds.width/2, oldPoint.y)
-                    }
-                    }()
-            case .bottom, .bottomLeft, .bottomRight:
-                return {
-                    switch self.options.exitType {
-                    case .dequeue: return (oldPoint.x, self.bounds.height/2)
-                    case .pop: return (oldPoint.x, self.superview!.bounds.size.height - self.bounds.height/2)
-                    case .slide: return self.options.position == .bottomLeft ?
-                        (-self.bounds.width, oldPoint.y) :
-                        (self.superview!.bounds.width + self.bounds.width/2, oldPoint.y)
-                    }
-                    }()
+        var newPoint: CGPoint = .zero
+        
+        switch self.options.position {
+        case .top, .topLeft, .topRight:
+            switch self.options.exitType {
+            case .dequeue:
+                newPoint = CGPoint(x: oldPoint.x, y: self.superview!.bounds.size.height - self.bounds.height/2)
+                if #available(iOS 11.0, *) {
+                    newPoint.y -= self.safeAreaInsets.bottom
+                }
+            case .pop:
+                newPoint = CGPoint(x: oldPoint.x, y: self.bounds.height/2)
+                if #available(iOS 11.0, *) {
+                    newPoint.y += self.safeAreaInsets.top
+                }
+            case .slide:
+                newPoint = self.options.position == .topLeft ? CGPoint(x: -self.bounds.width, y: oldPoint.y) : CGPoint(x: self.superview!.bounds.width + self.bounds.width/2, y: oldPoint.y)
             }
-        }()
+        case .bottom, .bottomLeft, .bottomRight:
+            switch self.options.exitType {
+            case .dequeue:
+                newPoint = CGPoint(x: oldPoint.x, y: self.bounds.height/2)
+                if #available(iOS 11.0, *) {
+                    newPoint.y += self.safeAreaInsets.top
+                }
+            case .pop:
+                newPoint = CGPoint(x: oldPoint.x, y: self.superview!.bounds.size.height - self.bounds.height/2)
+                if #available(iOS 11.0, *) {
+                    newPoint.y -= self.safeAreaInsets.bottom
+                }
+            case .slide:
+                    newPoint = self.options.position == .bottomLeft ? CGPoint(x: -self.bounds.width, y: oldPoint.y) : CGPoint(x: self.superview!.bounds.width + self.bounds.width/2, y: oldPoint.y)
+            }
+        }
         
         // Change center of layer.
-        let newPoint = CGPoint(x: x, y: y)
         self.layer.position = newPoint
         
         // Animate change.
@@ -632,3 +649,25 @@ extension StackedNotification {
         }
     }
 }
+
+extension UIColor {
+    static var labelText: UIColor {
+        if #available(iOS 13, *) {
+            return UIColor { (traitCollection: UITraitCollection) -> UIColor in
+                return .label
+            }
+        } else {
+            return UIColor.white
+        }
+    }
+}
+
+/// Current keyWindow
+private var currentWindow: UIWindow? = {
+    if #available(iOS 13.0, *) {
+        let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+        return windowScene?.windows.first
+    } else {
+        return UIApplication.shared.keyWindow
+    }
+}()
