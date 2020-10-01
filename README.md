@@ -36,7 +36,7 @@ StackedNotification(title: "ERROR", message: "some meaningful error message", op
 ```
 
 ## Sample app
-There is demo project available at [StackedNotifications-Demo ](https://github.com/hakkabon/StackedNotifications-Demo) with sample code explaing the use of the component.
+There is demo project available at [StackedNotifications-Demo ](https://github.com/hakkabon/StackedNotifications-Demo) with sample code explaining the use of the component.
 
 ## License
 MIT
